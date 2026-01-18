@@ -197,8 +197,8 @@ def run_robot_loop():
     import time
 
     try:
-        from lerobot.robots.so101_follower.config_so_follower import SO101FollowerConfig
-        from lerobot.robots.so101_follower.so_follower import SO101Follower
+        from lerobot.robots.so101_follower.config_so101_follower import SO101FollowerConfig
+        from lerobot.robots.so101_follower.so101_follower import SO101Follower
     except Exception as exc:  # pragma: no cover
         raise ImportError("LeRobot SO-101 classes not available") from exc
 
