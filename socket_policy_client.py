@@ -215,7 +215,7 @@ def run_robot_loop():
         "gripper",
     ]
 
-    host = "127.0.0.1"
+    host = "100.85.166.124"
     port = 9000
     dt = 1.0 / 30.0
 
@@ -249,9 +249,12 @@ def run_robot_loop():
 if __name__ == "__main__":
     # Example usage (client)
     # with SocketPolicyClient("127.0.0.1", 5555) as client:
-    #     action = client.get_action(b"", [0.0, 0.0, 0.0], 0.0, "task")
-    #     print(action)
+    #     actions = client.get_action(b"", b"", [0.0, 0.0, 0.0], 0.0, "task")
+    #     print(actions)
 
     # Example usage (server)
     # dummy_action_server()
+
+    # Example usage (robot control loop)
+    # run_robot_loop()
     pass
