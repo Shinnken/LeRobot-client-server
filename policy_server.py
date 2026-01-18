@@ -7,6 +7,8 @@ import time
 import torch
 from PIL import Image
 from torchvision import transforms
+from lerobot.processor import create_transition, transition_to_batch, TransitionKey
+from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -33,6 +35,24 @@ class PolicyServer:
 
         self.image_transform = transforms.Compose([transforms.ToTensor()])
 
+        self.preprocessor = None
+        self.postprocessor = None
+        try:
+            from lerobot.processor import DataProcessorPipeline
+
+            self.preprocessor = DataProcessorPipeline.from_pretrained(
+                self.policy_path, config_filename="policy_preprocessor.json"
+            )
+            self.postprocessor = DataProcessorPipeline.from_pretrained(
+                self.policy_path, config_filename="policy_postprocessor.json"
+            )
+        except Exception as exc:
+            logging.warning(
+                "Falling back to default PI05 processors (no pretrained processor configs found): %s",
+                exc,
+            )
+            self.preprocessor, self.postprocessor = make_pi05_pre_post_processors(self.policy.config)
+
     @staticmethod
     def _ensure_siglip_check():
         """Ensure SigLIP check does not block policy init."""
@@ -53,25 +73,39 @@ class PolicyServer:
         # Prepare image
         pil_image = Image.open(io.BytesIO(image_data_main)).convert("RGB")
         pil_image_right = Image.open(io.BytesIO(image_data_right)).convert("RGB")
-        image_tensor_main = self.image_transform(pil_image).to(self.device)
-        image_tensor_right = self.image_transform(pil_image_right).to(self.device)
+        image_tensor_main = self.image_transform(pil_image)
+        image_tensor_right = self.image_transform(pil_image_right)
 
         # Prepare state
-        state_tensor = torch.tensor(joint_states, dtype=torch.float32).to(self.device)
+        state_tensor = torch.tensor(joint_states, dtype=torch.float32)
 
         # Create observation dict
         observation = {
-            "observation.images.main": image_tensor_main.unsqueeze(0),
-            "observation.images.right_arm": image_tensor_right.unsqueeze(0),
-            "observation.state": state_tensor.unsqueeze(0),
-            "task": task_name,
+            "observation.images.main": image_tensor_main,
+            "observation.images.right_arm": image_tensor_right,
+            "observation.state": state_tensor,
         }
+
+        if self.preprocessor is None:
+            raise RuntimeError("Policy preprocessor is not available")
+
+        transition = create_transition(
+            observation=observation,
+            complementary_data={"task": [task_name]},
+        )
+        processed_transition = self.preprocessor._forward(transition)
+        batch = transition_to_batch(processed_transition)
         a = time.perf_counter()
         # Get action
         with torch.no_grad():
-            action_chunk = self.policy.predict_action_chunk(observation)
+            action_chunk = self.policy.predict_action_chunk(batch)
         b = time.perf_counter()
         print(f"policy run time is {b-a} s")
+
+        if self.postprocessor is not None:
+            action_transition = create_transition(action=action_chunk)
+            action_transition = self.postprocessor._forward(action_transition)
+            action_chunk = action_transition[TransitionKey.ACTION]
 
         action = action_chunk.squeeze(0).cpu().numpy()
         return action
