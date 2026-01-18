@@ -229,7 +229,7 @@ def run_robot_loop():
             robot_obs = robot.get_observation()
             joint_states = [robot_obs[f"{name}.pos"] for name in motor_names]
             action_chunk = client.get_action(
-                image_main, image_right, joint_states, timestamp=time.time(), task_name="task"
+                image_main, image_right, joint_states, timestamp=time.time(), task_name="Grab a notebook."
             )
             if not action_chunk:
                 continue
