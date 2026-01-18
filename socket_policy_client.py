@@ -256,5 +256,4 @@ if __name__ == "__main__":
     # dummy_action_server()
 
     # Example usage (robot control loop)
-    # run_robot_loop()
-    pass
+    run_robot_loop()
