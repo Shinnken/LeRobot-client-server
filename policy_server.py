@@ -14,9 +14,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class PolicyServer:
     def __init__(self):
-        self.policy_path: str = "/home/gregor/Experiments/lerobot/outputs/train/2025-08-25/16-49-40_smolvla/checkpoints/last/pretrained_model"
+        self.policy_path: str = "Grigorij/smolvla_right_arm_grab_notebook"
         self.policy_type: str = "smolvla"
-        self.host: str = "127.0.0.1"
+        self.host: str = "0.0.0.0"
         self.port: int = 9000
         self.device = torch.device("cuda")
         self.action_chunk_size: int | None = None
