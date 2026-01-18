@@ -1,5 +1,5 @@
 torch
 torchvision
 Pillow
-lerobot
+lerobot==0.4.2
 transformers
