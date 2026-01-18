@@ -19,6 +19,7 @@ class PolicyServer:
         self.host: str = "127.0.0.1"
         self.port: int = 9000
         self.device = torch.device("cuda")
+        self.action_chunk_size: int | None = None
 
         # Load model
         logging.info(f"Loading policy from: {self.policy_path}")
@@ -30,18 +31,20 @@ class PolicyServer:
 
         self.image_transform = transforms.Compose([transforms.ToTensor()])
 
-    def process_observation(self, timestamp, image_data, joint_states, task_name):
+    def process_observation(self, timestamp, image_data_main, image_data_right, joint_states, task_name):
         # Prepare image
-        pil_image = Image.open(io.BytesIO(image_data)).convert("RGB")
-        
-        image_tensor = self.image_transform(pil_image).to(self.device)
+        pil_image = Image.open(io.BytesIO(image_data_main)).convert("RGB")
+        pil_image_right = Image.open(io.BytesIO(image_data_right)).convert("RGB")
+        image_tensor_main = self.image_transform(pil_image).to(self.device)
+        image_tensor_right = self.image_transform(pil_image_right).to(self.device)
 
         # Prepare state
         state_tensor = torch.tensor(joint_states, dtype=torch.float32).to(self.device)
 
         # Create observation dict
         observation = {
-            "observation.images.main": image_tensor.unsqueeze(0),
+            "observation.images.main": image_tensor_main.unsqueeze(0),
+            "observation.images.right_arm": image_tensor_right.unsqueeze(0),
             "observation.state": state_tensor.unsqueeze(0),
             "task": task_name,
         }
@@ -52,9 +55,8 @@ class PolicyServer:
         b = time.perf_counter()
         print(f"policy run time is {b-a} s")
 
-        # Return first action from chunk
         action = action_chunk.squeeze(0).cpu().numpy()
-        return action[0] if len(action) > 0 else []
+        return action
 
     def run(self):
         # Create socket
@@ -84,14 +86,16 @@ class PolicyServer:
                         break
 
                     # Parse observation
-                    timestamp, image_data, joint_states, task_name = self._parse_observation(message_data)
+                    timestamp, image_data_main, image_data_right, joint_states, task_name = self._parse_observation(message_data)
                     print(f"Task: {task_name}.")
                     print(f"Joint states: {joint_states}")
                     # Process and get action
-                    action = self.process_observation(timestamp, image_data, joint_states, task_name)
+                    action_chunks = self.process_observation(
+                        timestamp, image_data_main, image_data_right, joint_states, task_name
+                    )
 
                     # Send response
-                    response = self._serialize_action(action)
+                    response = self._serialize_action_chunks(action_chunks)
                     client_socket.send(struct.pack('!I', len(response)))
                     client_socket.send(response)
 
@@ -120,8 +124,14 @@ class PolicyServer:
         # Read image length and data
         image_length = struct.unpack('!I', data[data_offset:data_offset+4])[0]
         data_offset += 4
-        image_data = data[data_offset:data_offset+image_length]
+        image_data_main = data[data_offset:data_offset+image_length]
         data_offset += image_length
+
+        # Read right image length and data
+        image_right_length = struct.unpack('!I', data[data_offset:data_offset+4])[0]
+        data_offset += 4
+        image_data_right = data[data_offset:data_offset+image_right_length]
+        data_offset += image_right_length
 
         # Read joint states
         joint_count = struct.unpack('!I', data[data_offset:data_offset+4])[0]
@@ -137,13 +147,23 @@ class PolicyServer:
         task_name = data[data_offset:data_offset+task_length].decode('utf-8')
         data_offset += task_length
 
-        return timestamp, image_data, joint_states, task_name
+        return timestamp, image_data_main, image_data_right, joint_states, task_name
 
-    def _serialize_action(self, action):
-        data = struct.pack('!I', len(action))
-        for value in action:
-            data += struct.pack('!f', float(value))
-        return data
+    def _serialize_action_chunks(self, action_chunks):
+        if action_chunks is None:
+            return struct.pack('!II', 0, 0)
+        if action_chunks.ndim == 1:
+            action_chunks = action_chunks[None, :]
+        if self.action_chunk_size is not None and self.action_chunk_size > 0:
+            action_chunks = action_chunks[: self.action_chunk_size]
+        n_steps = action_chunks.shape[0]
+        n_dim = action_chunks.shape[1] if n_steps > 0 else 0
+        if n_steps == 0 or n_dim == 0:
+            return struct.pack('!II', 0, 0)
+        flattened = action_chunks.flatten().tolist()
+        header = struct.pack('!II', n_steps, n_dim)
+        payload = struct.pack(f'!{len(flattened)}f', *flattened)
+        return header + payload
 
 
 def main():
