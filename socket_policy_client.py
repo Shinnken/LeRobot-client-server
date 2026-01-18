@@ -195,6 +195,7 @@ def dummy_action_server(host: str = "127.0.0.1", port: int = 5555) -> None:
 
 def run_robot_loop():
     import time
+    import cv2
 
     try:
         from lerobot.robots.so101_follower.config_so101_follower import SO101FollowerConfig
@@ -219,31 +220,58 @@ def run_robot_loop():
     port = 9000
     dt = 1.0 / 30.0
 
-    def get_my_camera_image_pair():
-        return b"", b""
+    cap_main = cv2.VideoCapture("/dev/camera_center")
+    cap_right = cv2.VideoCapture("/dev/camera_right")
+    if not cap_main.isOpened():
+        raise RuntimeError("Could not open main camera (/dev/camera_center)")
+    if not cap_right.isOpened():
+        cap_right = None
 
-    with SocketPolicyClient(host, port) as client:
-        while True:
-            loop_start = time.perf_counter()
-            image_main, image_right = get_my_camera_image_pair()
-            robot_obs = robot.get_observation()
-            joint_states = [robot_obs[f"{name}.pos"] for name in motor_names]
-            action_chunk = client.get_action(
-                image_main, image_right, joint_states, timestamp=time.time(), task_name="Grab a notebook."
-            )
-            if not action_chunk:
-                continue
-            steps_to_execute = min(10, len(action_chunk))
-            for i in range(steps_to_execute):
-                step_start = time.perf_counter()
-                action_values = action_chunk[i]
-                action_dict = {f"{name}.pos": val for name, val in zip(motor_names, action_values)}
-                robot.send_action(action_dict)
-                step_duration = time.perf_counter() - step_start
-                time.sleep(max(0.0, dt - step_duration))
-            loop_duration = time.perf_counter() - loop_start
-            if loop_duration < dt:
-                time.sleep(dt - loop_duration)
+    def get_my_camera_image_pair():
+        ret_main, frame_main = cap_main.read()
+        if not ret_main:
+            raise RuntimeError("Failed to read from main camera")
+
+        if cap_right is not None:
+            ret_right, frame_right = cap_right.read()
+            if not ret_right:
+                raise RuntimeError("Failed to read from right camera")
+        else:
+            frame_right = frame_main
+
+        ok_main, buf_main = cv2.imencode(".jpg", frame_main)
+        ok_right, buf_right = cv2.imencode(".jpg", frame_right)
+        if not ok_main or not ok_right:
+            raise RuntimeError("Failed to encode camera frames")
+        return buf_main.tobytes(), buf_right.tobytes()
+
+    try:
+        with SocketPolicyClient(host, port) as client:
+            while True:
+                loop_start = time.perf_counter()
+                image_main, image_right = get_my_camera_image_pair()
+                robot_obs = robot.get_observation()
+                joint_states = [robot_obs[f"{name}.pos"] for name in motor_names]
+                action_chunk = client.get_action(
+                    image_main, image_right, joint_states, timestamp=time.time(), task_name="Grab a notebook."
+                )
+                if not action_chunk:
+                    continue
+                steps_to_execute = min(10, len(action_chunk))
+                for i in range(steps_to_execute):
+                    step_start = time.perf_counter()
+                    action_values = action_chunk[i]
+                    action_dict = {f"{name}.pos": val for name, val in zip(motor_names, action_values)}
+                    robot.send_action(action_dict)
+                    step_duration = time.perf_counter() - step_start
+                    time.sleep(max(0.0, dt - step_duration))
+                loop_duration = time.perf_counter() - loop_start
+                if loop_duration < dt:
+                    time.sleep(dt - loop_duration)
+    finally:
+        cap_main.release()
+        if cap_right is not None:
+            cap_right.release()
 
 
 if __name__ == "__main__":

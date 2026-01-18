@@ -4,3 +4,4 @@ Pillow
 lerobot==0.4.2
 transformers
 num2words
+opencv-python
