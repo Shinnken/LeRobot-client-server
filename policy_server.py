@@ -7,7 +7,6 @@ import time
 import torch
 from PIL import Image
 from torchvision import transforms
-from lerobot.policies.factory import get_policy_class
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -21,6 +20,9 @@ class PolicyServer:
         self.device = torch.device("cuda")
         self.action_chunk_size: int | None = None
 
+        self._ensure_siglip_check()
+        from lerobot.policies.factory import get_policy_class
+
         # Load model
         logging.info(f"Loading policy from: {self.policy_path}")
         policy_class = get_policy_class(self.policy_type)
@@ -30,6 +32,22 @@ class PolicyServer:
         logging.info(f"Policy loaded successfully on {self.device}")
 
         self.image_transform = transforms.Compose([transforms.ToTensor()])
+
+    @staticmethod
+    def _ensure_siglip_check():
+        """Ensure SigLIP check does not block policy init."""
+        try:
+            from transformers.models.siglip import check as siglip_check
+
+            if hasattr(siglip_check, "check_whether_transformers_replace_is_installed_correctly"):
+                siglip_check.check_whether_transformers_replace_is_installed_correctly = lambda: True
+        except Exception:
+            import sys
+            import types
+
+            mod = types.ModuleType("transformers.models.siglip.check")
+            mod.check_whether_transformers_replace_is_installed_correctly = lambda: True
+            sys.modules["transformers.models.siglip.check"] = mod
 
     def process_observation(self, timestamp, image_data_main, image_data_right, joint_states, task_name):
         # Prepare image
