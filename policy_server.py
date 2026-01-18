@@ -14,8 +14,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class PolicyServer:
     def __init__(self):
-        self.policy_path: str = "Grigorij/smolvla_right_arm_grab_notebook"
-        self.policy_type: str = "smolvla"
+        self.policy_path: str = "Grigorij/pi05_right-arm-grab-notebook"
+        self.policy_type: str = "pi05"
         self.host: str = "0.0.0.0"
         self.port: int = 9000
         self.device = torch.device("cuda")
