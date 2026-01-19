@@ -2,3 +2,4 @@
 .clean_coder/
 .coderrules
 .git
+.venv/
