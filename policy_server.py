@@ -223,6 +223,10 @@ class PolicyServer:
             ("model", "paligemma_with_expert", "gemma_expert", "config"),
             ("model", "gemma_expert", "model", "config"),
             ("model", "gemma_expert", "config"),
+            ("paligemma_with_expert", "gemma_expert", "model", "config"),
+            ("paligemma_with_expert", "gemma_expert", "config"),
+            ("gemma_expert", "model", "config"),
+            ("gemma_expert", "config"),
         ]
 
         for path in candidates:
@@ -236,6 +240,33 @@ class PolicyServer:
             value = getattr(obj, "max_position_embeddings", None)
             if isinstance(value, int) and value > 0:
                 return value
+
+        # Fallback: inspect rotary embedding cache length
+        layer_paths = [
+            ("model", "paligemma_with_expert", "gemma_expert", "model"),
+            ("paligemma_with_expert", "gemma_expert", "model"),
+            ("gemma_expert", "model"),
+        ]
+        for path in layer_paths:
+            obj = self.policy
+            for attr in path:
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if obj is None:
+                continue
+            layers = getattr(obj, "layers", None)
+            if not layers:
+                continue
+            layer0 = layers[0]
+            self_attn = getattr(layer0, "self_attn", None)
+            rotary = getattr(self_attn, "rotary_emb", None)
+            if rotary is None:
+                continue
+            for attr in ("max_seq_len_cached", "_seq_len_cached"):
+                value = getattr(rotary, attr, None)
+                if isinstance(value, int) and value > 0:
+                    return value
         return None
 
     def process_observation(self, timestamp, image_data_main, image_data_right, joint_states, task_name):
