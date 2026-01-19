@@ -27,6 +27,7 @@ class PolicyServer:
         self.port: int = 9000
         self.device = torch.device("cuda")
         self.action_chunk_size: int | None = None
+        self._max_text_len: int | None = None
 
         torch.set_default_dtype(torch.float32)
         torch.backends.cuda.matmul.allow_tf32 = True
@@ -54,6 +55,9 @@ class PolicyServer:
         self.policy = self.policy.float()
         self.policy.eval()
         logging.info(f"Policy loaded successfully on {self.device}")
+        self._max_text_len = self._infer_max_text_len(self.policy.config)
+        if self._max_text_len is not None:
+            logging.info("Using max text length: %s", self._max_text_len)
 
         self.image_transform = transforms.Compose([transforms.ToTensor()])
 
@@ -91,6 +95,77 @@ class PolicyServer:
             mod.check_whether_transformers_replace_is_installed_correctly = lambda: True
             sys.modules["transformers.models.siglip.check"] = mod
 
+    @staticmethod
+    def _infer_max_text_len(config) -> int | None:
+        """Best-effort extraction of max text sequence length from policy config."""
+        def _pick_int(obj, names):
+            for name in names:
+                value = getattr(obj, name, None)
+                if isinstance(value, int) and value > 0:
+                    return value
+            return None
+
+        names = [
+            "max_position_embeddings",
+            "max_seq_len",
+            "max_sequence_length",
+            "max_length",
+            "seq_length",
+        ]
+        # Check direct config
+        value = _pick_int(config, names)
+        if value is not None:
+            return value
+
+        # Check nested config objects if present
+        nested_attrs = [
+            "text_config",
+            "language_config",
+            "gemma_config",
+            "paligemma_config",
+            "model_config",
+            "gemma_expert_config",
+            "expert_config",
+        ]
+        for attr in nested_attrs:
+            nested = getattr(config, attr, None)
+            if nested is None:
+                continue
+            value = _pick_int(nested, names)
+            if value is not None:
+                return value
+        return None
+
+    def _coerce_language_batch(self, batch):
+        tokens = batch.get(OBS_LANGUAGE_TOKENS)
+        masks = batch.get(OBS_LANGUAGE_ATTENTION_MASK)
+        if tokens is None or masks is None:
+            raise RuntimeError("Missing language tokens/masks in batch")
+
+        if self._max_text_len is not None and tokens.shape[1] > self._max_text_len:
+            tokens = tokens[:, : self._max_text_len]
+            masks = masks[:, : self._max_text_len]
+            batch[OBS_LANGUAGE_TOKENS] = tokens
+            batch[OBS_LANGUAGE_ATTENTION_MASK] = masks
+
+        if tokens.shape[:2] != masks.shape[:2]:
+            target_len = tokens.shape[1]
+            current_len = masks.shape[1]
+            if current_len < target_len:
+                pad = torch.zeros(
+                    masks.shape[0],
+                    target_len - current_len,
+                    dtype=masks.dtype,
+                    device=masks.device,
+                )
+                masks = torch.cat([masks, pad], dim=1)
+            else:
+                masks = masks[:, :target_len]
+            batch[OBS_LANGUAGE_ATTENTION_MASK] = masks
+
+        if masks.dtype != torch.bool:
+            batch[OBS_LANGUAGE_ATTENTION_MASK] = masks.to(dtype=torch.bool)
+
     def process_observation(self, timestamp, image_data_main, image_data_right, joint_states, task_name):
         # Prepare image
         pil_image = Image.open(io.BytesIO(image_data_main)).convert("RGB")
@@ -118,28 +193,7 @@ class PolicyServer:
         processed_transition = self.preprocessor._forward(transition)
         batch = transition_to_batch(processed_transition)
 
-        tokens = batch.get(OBS_LANGUAGE_TOKENS)
-        masks = batch.get(OBS_LANGUAGE_ATTENTION_MASK)
-        if tokens is None or masks is None:
-            raise RuntimeError("Missing language tokens/masks in batch")
-
-        if tokens.shape[:2] != masks.shape[:2]:
-            target_len = tokens.shape[1]
-            current_len = masks.shape[1]
-            if current_len < target_len:
-                pad = torch.zeros(
-                    masks.shape[0],
-                    target_len - current_len,
-                    dtype=masks.dtype,
-                    device=masks.device,
-                )
-                masks = torch.cat([masks, pad], dim=1)
-            else:
-                masks = masks[:, :target_len]
-            batch[OBS_LANGUAGE_ATTENTION_MASK] = masks
-
-        if masks.dtype != torch.bool:
-            batch[OBS_LANGUAGE_ATTENTION_MASK] = masks.to(dtype=torch.bool)
+        self._coerce_language_batch(batch)
         a = time.perf_counter()
         # Get action
         with torch.no_grad():
