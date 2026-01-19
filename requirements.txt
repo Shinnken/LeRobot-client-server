@@ -3,6 +3,5 @@ torchvision
 Pillow
 lerobot==0.4.2
 transformers==4.53.3
-transformers-replace
 num2words
 opencv-python
