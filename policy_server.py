@@ -180,6 +180,11 @@ class PolicyServer:
         if tokens is None or masks is None:
             raise RuntimeError("Missing language tokens/masks in batch")
 
+        if self._max_text_len is None:
+            self._max_text_len = self._infer_gemma_max_positions()
+            if self._max_text_len is not None:
+                logging.info("Inferred max text length from Gemma model: %s", self._max_text_len)
+
         if self._max_text_len is not None and tokens.shape[1] > self._max_text_len:
             tokens = tokens[:, : self._max_text_len]
             masks = masks[:, : self._max_text_len]
@@ -203,6 +208,35 @@ class PolicyServer:
 
         if masks.dtype != torch.bool:
             batch[OBS_LANGUAGE_ATTENTION_MASK] = masks.to(dtype=torch.bool)
+
+        logging.debug(
+            "Language tokens/masks shapes: tokens=%s masks=%s max_text_len=%s",
+            tuple(tokens.shape),
+            tuple(batch[OBS_LANGUAGE_ATTENTION_MASK].shape),
+            self._max_text_len,
+        )
+
+    def _infer_gemma_max_positions(self) -> int | None:
+        """Fallback: read Gemma max_position_embeddings from the loaded model."""
+        candidates = [
+            ("model", "paligemma_with_expert", "gemma_expert", "model", "config"),
+            ("model", "paligemma_with_expert", "gemma_expert", "config"),
+            ("model", "gemma_expert", "model", "config"),
+            ("model", "gemma_expert", "config"),
+        ]
+
+        for path in candidates:
+            obj = self.policy
+            for attr in path:
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if obj is None:
+                continue
+            value = getattr(obj, "max_position_embeddings", None)
+            if isinstance(value, int) and value > 0:
+                return value
+        return None
 
     def process_observation(self, timestamp, image_data_main, image_data_right, joint_states, task_name):
         # Prepare image
