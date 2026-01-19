@@ -55,7 +55,7 @@ class PolicyServer:
         self.policy = self.policy.float()
         self.policy.eval()
         logging.info(f"Policy loaded successfully on {self.device}")
-        self._max_text_len = self._infer_max_text_len(self.policy.config)
+        self._max_text_len = self._infer_max_text_len(self.policy.config, self.policy)
         if self._max_text_len is not None:
             logging.info("Using max text length: %s", self._max_text_len)
 
@@ -96,8 +96,8 @@ class PolicyServer:
             sys.modules["transformers.models.siglip.check"] = mod
 
     @staticmethod
-    def _infer_max_text_len(config) -> int | None:
-        """Best-effort extraction of max text sequence length from policy config."""
+    def _infer_max_text_len(config, policy=None) -> int | None:
+        """Best-effort extraction of max text sequence length from policy config or model."""
         def _pick_int(obj, names):
             for name in names:
                 value = getattr(obj, name, None)
@@ -134,6 +134,44 @@ class PolicyServer:
             value = _pick_int(nested, names)
             if value is not None:
                 return value
+
+        # Check model objects if available
+        if policy is not None:
+            model_attrs = [
+                "model",
+                "paligemma_with_expert",
+                "gemma_expert",
+            ]
+
+            def _walk(obj):
+                if obj is None:
+                    return None
+                value = _pick_int(obj, names)
+                if value is not None:
+                    return value
+                conf = getattr(obj, "config", None)
+                value = _pick_int(conf, names)
+                if value is not None:
+                    return value
+                return None
+
+            # Try common nested paths
+            value = _walk(policy)
+            if value is not None:
+                return value
+
+            current = policy
+            for attr in model_attrs:
+                current = getattr(current, attr, None)
+                value = _walk(current)
+                if value is not None:
+                    return value
+                # Attempt subfields for known stacks
+                if current is not None:
+                    for sub_attr in ("model", "gemma_expert", "text_model", "language_model"):
+                        value = _walk(getattr(current, sub_attr, None))
+                        if value is not None:
+                            return value
         return None
 
     def _coerce_language_batch(self, batch):
