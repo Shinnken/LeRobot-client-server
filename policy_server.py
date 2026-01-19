@@ -14,6 +14,7 @@ from torchvision import transforms
 from lerobot.processor import create_transition, transition_to_batch, TransitionKey
 from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
 from lerobot.configs.policies import PreTrainedConfig
+from lerobot.utils.constants import OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -116,6 +117,29 @@ class PolicyServer:
         )
         processed_transition = self.preprocessor._forward(transition)
         batch = transition_to_batch(processed_transition)
+
+        tokens = batch.get(OBS_LANGUAGE_TOKENS)
+        masks = batch.get(OBS_LANGUAGE_ATTENTION_MASK)
+        if tokens is None or masks is None:
+            raise RuntimeError("Missing language tokens/masks in batch")
+
+        if tokens.shape[:2] != masks.shape[:2]:
+            target_len = tokens.shape[1]
+            current_len = masks.shape[1]
+            if current_len < target_len:
+                pad = torch.zeros(
+                    masks.shape[0],
+                    target_len - current_len,
+                    dtype=masks.dtype,
+                    device=masks.device,
+                )
+                masks = torch.cat([masks, pad], dim=1)
+            else:
+                masks = masks[:, :target_len]
+            batch[OBS_LANGUAGE_ATTENTION_MASK] = masks
+
+        if masks.dtype != torch.bool:
+            batch[OBS_LANGUAGE_ATTENTION_MASK] = masks.to(dtype=torch.bool)
         a = time.perf_counter()
         # Get action
         with torch.no_grad():
