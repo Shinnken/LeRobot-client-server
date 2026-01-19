@@ -16,7 +16,7 @@ from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.utils.constants import OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class PolicyServer:
