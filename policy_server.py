@@ -5,10 +5,15 @@ import struct
 import time
 
 import torch
+try:
+    import torch._dynamo as torch_dynamo
+except Exception:  # pragma: no cover
+    torch_dynamo = None
 from PIL import Image
 from torchvision import transforms
 from lerobot.processor import create_transition, transition_to_batch, TransitionKey
 from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
+from lerobot.configs.policies import PreTrainedConfig
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -22,14 +27,30 @@ class PolicyServer:
         self.device = torch.device("cuda")
         self.action_chunk_size: int | None = None
 
+        torch.set_default_dtype(torch.float32)
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        if torch_dynamo is not None:
+            torch_dynamo.config.suppress_errors = True
+
         self._ensure_siglip_check()
         from lerobot.policies.factory import get_policy_class
 
         # Load model
         logging.info(f"Loading policy from: {self.policy_path}")
+        policy_config = PreTrainedConfig.from_pretrained(
+            self.policy_path,
+            cli_overrides=[
+                "--dtype=float32",
+                "--compile_model=false",
+                "--use_amp=false",
+                f"--device={self.device.type}",
+            ],
+        )
         policy_class = get_policy_class(self.policy_type)
-        self.policy = policy_class.from_pretrained(self.policy_path)
+        self.policy = policy_class.from_pretrained(self.policy_path, config=policy_config)
         self.policy.to(self.device)
+        self.policy = self.policy.float()
         self.policy.eval()
         logging.info(f"Policy loaded successfully on {self.device}")
 
@@ -98,7 +119,10 @@ class PolicyServer:
         a = time.perf_counter()
         # Get action
         with torch.no_grad():
-            action_chunk = self.policy.predict_action_chunk(batch)
+            predict_fn = self.policy.predict_action_chunk
+            if torch_dynamo is not None:
+                predict_fn = torch_dynamo.disable(predict_fn)
+            action_chunk = predict_fn(batch)
         b = time.perf_counter()
         print(f"policy run time is {b-a} s")
 
