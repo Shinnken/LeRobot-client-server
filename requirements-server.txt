@@ -1,0 +1,19 @@
+# Dependencies for running the policy server(s)
+# - FastAPI HTTP server: new/policy_server.py
+# - Socket server: policy_server.py
+
+# Core ML/runtime
+numpy
+torch
+torchvision
+Pillow
+
+# LeRobot + policy/model stack
+lerobot==0.4.2
+transformers==4.53.3
+num2words
+
+# HTTP server deps (for new/policy_server.py)
+fastapi
+uvicorn
+pydantic

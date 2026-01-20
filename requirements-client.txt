@@ -1,0 +1,14 @@
+# Dependencies for running the client/robot side scripts
+# - new/record_script_local.py
+# - socket_policy_client.py (when used)
+
+numpy
+torch
+
+# HTTP client
+requests
+
+# LeRobot + robot/camera stack
+lerobot==0.4.2
+opencv-python
+feetech-servo-sdk
