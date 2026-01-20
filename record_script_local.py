@@ -32,8 +32,8 @@ except ImportError:
 
 FPS = 30
 TASK_DESCRIPTION = "Grab the sock and put it in the box"
-HF_DATASET_ID = "SoSolaris/dqwdwqdwqqewq"
-HF_POLICY_ID = "SoSolaris/xvla-your-robot"
+HF_DATASET_ID = ""
+HF_POLICY_ID = "Grigorij/act_right-arm-grab-notebook-2"
 # HF_POLICY_ID = "SoSolaris/act_so100_socks"
 POLICY_SERVER_URL = "http://100.85.166.124:9000"
 # Optional: rename map for observations
@@ -45,10 +45,11 @@ ACTION_CHUNK_SIZE = 10  # Number of actions to request at once (reduces network 
 CHUNK_REFILL_THRESHOLD = 0.3  # Refill when queue is below 30% of chunk size
 
 
-ROBOT_PORT = os.getenv("ROBOT_PORT", "/dev/cu.usbmodem58760433451")
-CAM_FRONT_INDEX = int(os.getenv("CAM_FRONT_INDEX", "1"))
-CAM_UP_INDEX = int(os.getenv("CAM_UP_INDEX", "0"))
-SKIP_DATASET_STATS = os.getenv("SKIP_DATASET_STATS", "0") == "1"
+ROBOT_PORT = os.getenv("ROBOT_PORT", "/dev/arm_right")
+MAIN_INDEX = int(os.getenv("CAM_MAIN_INDEX", "2"))
+RIGHT_INDEX = int(os.getenv("CAM_RIGHT_INDEX", "0"))
+SKIP_DATASET_STATS = "1"
+# SKIP_DATASET_STATS = os.getenv("SKIP_DATASET_STATS", "0") == "1"
 
 
 def numpy_to_dict(obj: Any) -> Any:
@@ -107,8 +108,8 @@ def main():
             port=ROBOT_PORT,
             id="my_awesome_follower_arm",
             cameras={
-                "front": OpenCVCameraConfig(index_or_path=CAM_FRONT_INDEX, width=640, height=480, fps=30),
-                "up": OpenCVCameraConfig(index_or_path=CAM_UP_INDEX, width=1280, height=720, fps=60),
+                "main": OpenCVCameraConfig(index_or_path=MAIN_INDEX, width=640, height=480, fps=30),
+                "right_arm": OpenCVCameraConfig(index_or_path=RIGHT_INDEX, width=640, height=480, fps=30),
             },
         )
     )
