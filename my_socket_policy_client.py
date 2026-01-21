@@ -203,7 +203,7 @@ def run_robot_loop():
     except Exception as exc:  # pragma: no cover
         raise ImportError("LeRobot SO-101 classes not available") from exc
 
-    robot_config = SO101FollowerConfig(port="/dev/ttyACM2")
+    robot_config = SO101FollowerConfig(port="/dev/arm_right")
     robot = SO101Follower(robot_config)
     robot.connect()
 

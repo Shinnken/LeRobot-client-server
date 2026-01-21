@@ -175,7 +175,8 @@ class PolicyServer:
         tokens = batch.get(OBS_LANGUAGE_TOKENS)
         masks = batch.get(OBS_LANGUAGE_ATTENTION_MASK)
         if tokens is None or masks is None:
-            raise RuntimeError("Missing language tokens/masks in batch")
+            logging.debug("No language tokens/masks found; skipping language batch coercion.")
+            return
 
         if self._max_text_len is None:
             self._max_text_len = self._infer_gemma_max_positions()
