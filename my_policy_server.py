@@ -423,6 +423,7 @@ class PolicyServer:
 
 def main():
     server = PolicyServer()
+    server.action_chunk_size = 30
     server.run()
 
 

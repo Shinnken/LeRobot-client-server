@@ -234,7 +234,7 @@ def run_robot_loop():
                 )
                 if not action_chunk:
                     continue
-                steps_to_execute = min(10, len(action_chunk))
+                steps_to_execute = min(30, len(action_chunk))
                 for i in range(steps_to_execute):
                     step_start = time.perf_counter()
                     action_values = action_chunk[i]
