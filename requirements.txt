@@ -1,0 +1,8 @@
+torch
+torchvision
+Pillow
+lerobot==0.4.2
+transformers==4.53.3
+num2words
+opencv-python
+feetech-servo-sdk
