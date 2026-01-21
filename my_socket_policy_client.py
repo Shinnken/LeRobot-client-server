@@ -234,10 +234,10 @@ def run_robot_loop():
                 )
                 if not action_chunk:
                     continue
-                steps_to_execute = min(30, len(action_chunk))
+                steps_to_execute = min(20-5, len(action_chunk))
                 for i in range(steps_to_execute):
                     step_start = time.perf_counter()
-                    action_values = action_chunk[i]
+                    action_values = action_chunk[i+5]
                     action_dict = {f"{name}.pos": val for name, val in zip(motor_names, action_values)}
                     robot.send_action(action_dict)
                     step_duration = time.perf_counter() - step_start
