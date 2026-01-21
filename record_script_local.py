@@ -31,7 +31,7 @@ except ImportError:
 
 
 FPS = 30
-TASK_DESCRIPTION = "Grab the sock and put it in the box"
+TASK_DESCRIPTION = "Grab the notebook."
 HF_DATASET_ID = ""
 HF_POLICY_ID = "Grigorij/act_right-arm-grab-notebook-2"
 # HF_POLICY_ID = "SoSolaris/act_so100_socks"

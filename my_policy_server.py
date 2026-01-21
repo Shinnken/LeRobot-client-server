@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover
 from PIL import Image
 from torchvision import transforms
 from lerobot.processor import create_transition, transition_to_batch, TransitionKey
-from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
+from lerobot.policies.factory import make_pre_post_processors
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.utils.constants import OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS
 
@@ -21,8 +21,8 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 class PolicyServer:
     def __init__(self):
-        self.policy_path: str = "Grigorij/pi05_right-arm-grab-notebook"
-        self.policy_type: str = "pi05"
+        self.policy_path: str = "Grigorij/act_right-arm-grab-notebook-2"
+        self.policy_type: str = "act"
         self.host: str = "0.0.0.0"
         self.port: int = 9000
         self.device = torch.device("cuda")
@@ -74,10 +74,14 @@ class PolicyServer:
             )
         except Exception as exc:
             logging.warning(
-                "Falling back to default PI05 processors (no pretrained processor configs found): %s",
+                "Falling back to default processors (no pretrained processor configs found): %s",
                 exc,
             )
-            self.preprocessor, self.postprocessor = make_pi05_pre_post_processors(self.policy.config)
+            self.preprocessor, self.postprocessor = make_pre_post_processors(
+                policy_cfg=self.policy.config,
+                pretrained_path=self.policy_path,
+                dataset_stats=None,
+            )
 
     @staticmethod
     def _ensure_siglip_check():
