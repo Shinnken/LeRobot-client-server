@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 class PolicyServer:
     def __init__(self):
-        self.policy_path: str = "Grigorij/act_right-arm-grab-notebook-2"
+        self.policy_path: str = "Grigorij/act_collecting_trash"
         self.policy_type: str = "act"
         self.host: str = "0.0.0.0"
         self.port: int = 9000
