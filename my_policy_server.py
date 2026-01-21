@@ -40,15 +40,8 @@ class PolicyServer:
 
         # Load model
         logging.info(f"Loading policy from: {self.policy_path}")
-        policy_config = PreTrainedConfig.from_pretrained(
-            self.policy_path,
-            cli_overrides=[
-                "--dtype=float32",
-                "--compile_model=false",
-                "--use_amp=false",
-                f"--device={self.device.type}",
-            ],
-        )
+        policy_config = PreTrainedConfig.from_pretrained(self.policy_path)
+        policy_config.device = self.device.type
         policy_class = get_policy_class(self.policy_type)
         self.policy = policy_class.from_pretrained(self.policy_path, config=policy_config)
         self.policy.to(self.device)
