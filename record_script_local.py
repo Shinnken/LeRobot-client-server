@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 import base64
-import os
 import time
 from collections import deque
 from typing import Any
 
 import numpy as np
 import requests
+import os
 
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -31,11 +31,13 @@ except ImportError:
 
 
 FPS = 30
-TASK_DESCRIPTION = "Grab the notebook."
+TASK_DESCRIPTION = "Grab the sock and put it in the box"
 HF_DATASET_ID = ""
-HF_POLICY_ID = "Grigorij/act_right-arm-grab-notebook-2"
+HF_POLICY_ID = "Grigorij/act_collecting_trash"
 # HF_POLICY_ID = "SoSolaris/act_so100_socks"
 POLICY_SERVER_URL = "http://100.85.166.124:9000"
+# Optional: rename map for observations
+# Example: {"observation.images.front": "observation.images.camera1", "observation.images.up": "observation.images.camera2"}
 RENAME_MAP = {"observation.images.front": "observation.images.image", "observation.images.up": "observation.images.image2"}
 # RENAME_MAP = {}
 # Action chunking configuration
@@ -44,22 +46,18 @@ CHUNK_REFILL_THRESHOLD = 0.3  # Refill when queue is below 30% of chunk size
 
 
 ROBOT_PORT = os.getenv("ROBOT_PORT", "/dev/arm_right")
-MAIN_INDEX = int(os.getenv("CAM_MAIN_INDEX", "2"))
-RIGHT_INDEX = int(os.getenv("CAM_RIGHT_INDEX", "0"))
+MAIN_INDEX = int(os.getenv("CAM_MAIN_INDEX", "0"))
+RIGHT_INDEX = int(os.getenv("CAM_RIGHT_INDEX", "2"))
 SKIP_DATASET_STATS = "1"
+# SKIP_DATASET_STATS = os.getenv("SKIP_DATASET_STATS", "0") == "1"
 
 
 def numpy_to_dict(obj: Any) -> Any:
     if isinstance(obj, np.ndarray):
-        return {
-            "__ndarray__": True,
-            "data": base64.b64encode(obj.tobytes()).decode("utf-8"),
-            "dtype": str(obj.dtype),
-            "shape": obj.shape,
-        }
-    if isinstance(obj, dict):
+        return {"__ndarray__": True, "data": base64.b64encode(obj.tobytes()).decode("utf-8"), "dtype": str(obj.dtype), "shape": obj.shape}
+    elif isinstance(obj, dict):
         return {k: numpy_to_dict(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
+    elif isinstance(obj, (list, tuple)):
         return [numpy_to_dict(item) for item in obj]
     return obj
 
@@ -67,23 +65,14 @@ def numpy_to_dict(obj: Any) -> Any:
 def dict_to_numpy(obj: Any) -> Any:
     if isinstance(obj, dict) and obj.get("__ndarray__"):
         return np.frombuffer(base64.b64decode(obj["data"]), dtype=np.dtype(obj["dtype"])).reshape(obj["shape"])
-    if isinstance(obj, dict):
+    elif isinstance(obj, dict):
         return {k: dict_to_numpy(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
+    elif isinstance(obj, (list, tuple)):
         return [dict_to_numpy(item) for item in obj]
     return obj
 
 
-def predict_action_remote(
-    observation: dict[str, np.ndarray],
-    dataset_features: dict,
-    dataset_stats: dict | None,
-    policy_id: str,
-    task: str,
-    robot_type: str,
-    rename_map: dict[str, str] | None = None,
-    chunk_size: int = 1,
-) -> dict[str, float] | list[dict[str, float]]:
+def predict_action_remote(observation: dict[str, np.ndarray], dataset_features: dict, dataset_stats: dict | None, policy_id: str, task: str, robot_type: str, rename_map: dict[str, str] | None = None, chunk_size: int = 1) -> dict[str, float] | list[dict[str, float]]:
     dataset_stats_serialized = serialize_dict(dataset_stats) if dataset_stats is not None else {}
     response = requests.post(
         f"{POLICY_SERVER_URL}/predict",
@@ -102,11 +91,15 @@ def predict_action_remote(
     response.raise_for_status()
     result = response.json()
     if "action_chunk" in result:
-        return [
-            {k: float(v.item()) if isinstance(v, np.ndarray) and v.size == 1 else v for k, v in dict_to_numpy(encoded).items()}
-            for encoded in result["action_chunk"]
-        ]
-    return {k: float(v.item()) if isinstance(v, np.ndarray) and v.size == 1 else v for k, v in dict_to_numpy(result["action"]).items()}
+        # Return list of action dicts
+        chunk_list = []
+        for action_dict_encoded in result["action_chunk"]:
+            action_dict = {k: float(v.item()) if isinstance(v, np.ndarray) and v.size == 1 else v for k, v in dict_to_numpy(action_dict_encoded).items()}
+            chunk_list.append(action_dict)
+        return chunk_list
+    else:
+        # Single action (backward compatibility)
+        return {k: float(v.item()) if isinstance(v, np.ndarray) and v.size == 1 else v for k, v in dict_to_numpy(result["action"]).items()}
 
 
 def main():
@@ -128,20 +121,14 @@ def main():
 
     dataset_stats = None
     if not SKIP_DATASET_STATS:
-        dataset = LeRobotDataset.create(
-            repo_id=HF_DATASET_ID,
-            fps=FPS,
-            features=dataset_features,
-            robot_type=robot.name,
-            use_videos=True,
-            image_writer_threads=1,
-        )
+        # We don't record data here, but many policies expect dataset stats for normalization.
+        dataset = LeRobotDataset.create(repo_id=HF_DATASET_ID, fps=FPS, features=dataset_features, robot_type=robot.name, use_videos=True, image_writer_threads=1)
         dataset_stats = dataset.meta.stats
     listener, events = init_keyboard_listener()
     robot.connect()
     if not robot.is_connected:
         raise ValueError("Robot is not connected!")
-    if requests.get(f"{POLICY_SERVER_URL}/health", timeout=2.0).json().get("status") != "ok":
+    if not requests.get(f"{POLICY_SERVER_URL}/health", timeout=2.0).json().get("status") == "ok":
         raise ValueError("Policy server not ready")
 
     print("Starting inference loop (no recording)...")
@@ -173,7 +160,10 @@ def main():
                         RENAME_MAP,
                         chunk_size=ACTION_CHUNK_SIZE,
                     )
-                    action_buffer.extend(chunk_result[:ACTION_CHUNK_SIZE] if isinstance(chunk_result, list) else [chunk_result])
+                    if isinstance(chunk_result, list):
+                        action_buffer.extend(chunk_result[:ACTION_CHUNK_SIZE])
+                    else:
+                        action_buffer.append(chunk_result)
                 except Exception as e:
                     print(f"Error getting action chunk from server: {e}")
                     try:

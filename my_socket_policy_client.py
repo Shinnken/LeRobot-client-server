@@ -164,38 +164,15 @@ class SocketPolicyClient:
         return b"".join(chunks)
 
 
-def dummy_action_server(host: str = "127.0.0.1", port: int = 5555) -> None:
-    """Minimal server for local testing. Returns 4 zeros as action."""
-
-    def recv_exact(conn: socket.socket, count: int) -> bytes:
-        chunks = []
-        received = 0
-        while received < count:
-            chunk = conn.recv(count - received)
-            if not chunk:
-                raise ConnectionError("Client disconnected")
-            chunks.append(chunk)
-            received += len(chunk)
-        return b"".join(chunks)
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind((host, port))
-        srv.listen(1)
-        conn, _ = srv.accept()
-        with conn:
-            while True:
-                header = recv_exact(conn, 4)
-                (length,) = struct.unpack(">I", header)
-                _payload = recv_exact(conn, length)
-                # Always respond with 1 step of 4 zeros
-                response = struct.pack(">II", 1, 4) + struct.pack(">ffff", 0.0, 0.0, 0.0, 0.0)
-                conn.sendall(struct.pack(">I", len(response)) + response)
-
-
 def run_robot_loop():
     import time
     import cv2
+
+    from robocrew.robots.XLeRobot.servo_controls import ServoControler
+
+    servo_controler = ServoControler(left_arm_head_usb='/dev/arm_left')
+    servo_controler.turn_head_to_vla_position()
+
 
     try:
         from lerobot.robots.so101_follower.config_so101_follower import SO101FollowerConfig
@@ -248,12 +225,12 @@ def run_robot_loop():
     try:
         with SocketPolicyClient(host, port) as client:
             while True:
-                loop_start = time.perf_counter()
+                # loop_start = time.perf_counter()
                 image_main, image_right = get_my_camera_image_pair()
                 robot_obs = robot.get_observation()
                 joint_states = [robot_obs[f"{name}.pos"] for name in motor_names]
                 action_chunk = client.get_action(
-                    image_main, image_right, joint_states, timestamp=time.time(), task_name="Grab a notebook."
+                    image_main, image_right, joint_states, timestamp=time.time(), task_name="Collect trash to the bin."
                 )
                 if not action_chunk:
                     continue
@@ -265,9 +242,10 @@ def run_robot_loop():
                     robot.send_action(action_dict)
                     step_duration = time.perf_counter() - step_start
                     time.sleep(max(0.0, dt - step_duration))
-                loop_duration = time.perf_counter() - loop_start
-                if loop_duration < dt:
-                    time.sleep(dt - loop_duration)
+                # loop_duration = time.perf_counter() - loop_start
+                # print(f"Loop time: {loop_duration:.3f} s")
+                # if loop_duration < dt:
+                #     time.sleep(dt - loop_duration)
     finally:
         cap_main.release()
         if cap_right is not None:

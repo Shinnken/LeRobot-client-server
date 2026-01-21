@@ -3,3 +3,5 @@
 .coderrules
 .git
 .venv/
+*.jpg
+camera_test.py
